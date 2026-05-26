@@ -220,11 +220,11 @@ app.get('/admin/pending', async (req, res) => {
     }
 });
 
-// Get all users (admin only)
+// Get all users grouped by company (admin only)
 app.get('/admin/users', async (req, res) => {
     try {
         const result = await pool.query(
-            "SELECT id, name, role, company, status, created_at FROM users ORDER BY created_at DESC"
+            "SELECT id, name, role, company, categories, status, created_at FROM users ORDER BY company ASC, created_at DESC"
         );
         res.json({ users: result.rows });
     } catch (err) {
@@ -266,7 +266,15 @@ app.delete('/admin/users/:userId', async (req, res) => {
 
 app.get('/developments', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM developments ORDER BY created_at DESC');
+        const { company, role } = req.query;
+        let query = 'SELECT * FROM developments ORDER BY created_at DESC';
+        let params = [];
+        if ((role === 'buyer' || role === 'stakeholder') && company && company.trim() !== '') {
+            // Only show developments from users in the same company
+            query = 'SELECT d.* FROM developments d JOIN users u ON d.created_by = u.id WHERE LOWER(u.company) = LOWER($1) ORDER BY d.created_at DESC';
+            params = [company];
+        }
+        const result = await pool.query(query, params);
         // Also fetch comments for each
         const devs = result.rows;
         const devIds = devs.map(d => d.id);
@@ -357,9 +365,27 @@ app.post('/developments/:id/comments', async (req, res) => {
 
 app.get('/tenders', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM tenders ORDER BY created_at DESC');
+        const { company, role, categories } = req.query;
+        let result;
+        if (role === 'buyer' && company && company.trim() !== '') {
+            // Buyers only see tenders from their own company
+            result = await pool.query(
+                'SELECT t.* FROM tenders t JOIN users u ON t.created_by = u.id WHERE LOWER(u.company) = LOWER($1) ORDER BY t.created_at DESC',
+                [company]
+            );
+        } else if (role === 'supplier' && categories) {
+            // Suppliers see all tenders matching their categories
+            const cats = categories.split(',');
+            result = await pool.query(
+                'SELECT * FROM tenders WHERE category = ANY($1) ORDER BY created_at DESC',
+                [cats]
+            );
+        } else {
+            result = await pool.query('SELECT * FROM tenders ORDER BY created_at DESC');
+        }
         res.json({ tenders: result.rows.map(t => formatTender(t)) });
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: 'Server error' });
     }
 });
@@ -413,9 +439,26 @@ app.delete('/tenders/:id', async (req, res) => {
 
 app.get('/bids', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM bids ORDER BY created_at DESC');
+        const { company, role, supplierId } = req.query;
+        let result;
+        if (role === 'supplier' && supplierId) {
+            // Suppliers see bids from their whole company (same company name)
+            result = await pool.query(
+                'SELECT b.* FROM bids b JOIN users u ON b.supplier_id = u.id WHERE LOWER(u.company) = (SELECT LOWER(company) FROM users WHERE id = $1) ORDER BY b.created_at DESC',
+                [supplierId]
+            );
+        } else if (role === 'buyer' && company) {
+            // Buyers see all bids on their company tenders
+            result = await pool.query(
+                'SELECT b.* FROM bids b JOIN tenders t ON b.tender_id = t.id JOIN users u ON t.created_by = u.id WHERE LOWER(u.company) = LOWER($1) ORDER BY b.created_at DESC',
+                [company]
+            );
+        } else {
+            result = await pool.query('SELECT * FROM bids ORDER BY created_at DESC');
+        }
         res.json({ bids: result.rows.map(b => formatBid(b)) });
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: 'Server error' });
     }
 });
