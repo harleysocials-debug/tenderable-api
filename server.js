@@ -30,6 +30,7 @@ app.get('/setup', async (req, res) => {
                 role VARCHAR(20) NOT NULL CHECK (role IN ('buyer', 'supplier', 'stakeholder')),
                 company VARCHAR(100),
                 categories TEXT[],
+                status VARCHAR(20) DEFAULT 'pending',
                 created_at TIMESTAMP DEFAULT NOW()
             )
         `);
@@ -121,6 +122,11 @@ app.get('/setup', async (req, res) => {
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_messages_bid_id ON messages(bid_id)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_dev_comments_dev_id ON dev_comments(dev_id)`);
 
+        // Add status column to existing users table if it doesn't exist
+        await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending'`);
+        // Make sure Harley's account is approved if it exists
+        await pool.query(`UPDATE users SET status = 'approved' WHERE LOWER(name) = 'harley killingsworth'`);
+
         res.json({ 
             success: true, 
             message: 'All tables created successfully! You can now register and use Tenderable.',
@@ -147,11 +153,17 @@ app.post('/auth/register', async (req, res) => {
 
         const id = 'user-' + Date.now();
         const pinHash = await bcrypt.hash(pin, 10);
+        // Harley is auto-approved admin
+        const isAdmin = name.toLowerCase() === 'harley killingsworth';
+        const status = isAdmin ? 'approved' : 'pending';
         await pool.query(
-            'INSERT INTO users (id, name, pin_hash, role, company, categories) VALUES ($1, $2, $3, $4, $5, $6)',
-            [id, name, pinHash, role, company || '', categories || []]
+            'INSERT INTO users (id, name, pin_hash, role, company, categories, status) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+            [id, name, pinHash, role, company || '', categories || [], status]
         );
-        res.json({ id, name, role, company: company || '', categories: categories || [] });
+        if (!isAdmin) {
+            return res.json({ pending: true, message: 'Account created! Waiting for Harley to approve your account.' });
+        }
+        res.json({ id, name, role, company: company || '', categories: categories || [], isAdmin: true });
     } catch (err) {
         console.error('Register error:', err);
         res.status(500).json({ error: 'Server error' });
@@ -171,15 +183,81 @@ app.post('/auth/login', async (req, res) => {
         const valid = await bcrypt.compare(pin, user.pin_hash);
         if (!valid) return res.status(401).json({ error: 'Incorrect PIN' });
 
+        if (user.status === 'pending') {
+            return res.status(403).json({ error: 'Your account is awaiting approval from Harley Killingsworth.' });
+        }
+        if (user.status === 'rejected') {
+            return res.status(403).json({ error: 'Your account request was not approved. Please contact Harley.' });
+        }
+
+        const isAdmin = user.name.toLowerCase() === 'harley killingsworth';
         res.json({
             id: user.id,
             name: user.name,
             role: user.role,
             company: user.company,
-            categories: user.categories || []
+            categories: user.categories || [],
+            isAdmin: isAdmin,
+            status: user.status
         });
     } catch (err) {
         console.error('Login error:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// ── ADMIN ────────────────────────────────────────────────────────────────────
+
+// Get all pending users (admin only)
+app.get('/admin/pending', async (req, res) => {
+    try {
+        const result = await pool.query(
+            "SELECT id, name, role, company, categories, status, created_at FROM users WHERE status = 'pending' ORDER BY created_at ASC"
+        );
+        res.json({ users: result.rows });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get all users (admin only)
+app.get('/admin/users', async (req, res) => {
+    try {
+        const result = await pool.query(
+            "SELECT id, name, role, company, status, created_at FROM users ORDER BY created_at DESC"
+        );
+        res.json({ users: result.rows });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Approve user
+app.post('/admin/approve/:userId', async (req, res) => {
+    try {
+        await pool.query("UPDATE users SET status = 'approved' WHERE id = $1", [req.params.userId]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Reject user
+app.post('/admin/reject/:userId', async (req, res) => {
+    try {
+        await pool.query("UPDATE users SET status = 'rejected' WHERE id = $1", [req.params.userId]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Delete user
+app.delete('/admin/users/:userId', async (req, res) => {
+    try {
+        await pool.query("DELETE FROM users WHERE id = $1", [req.params.userId]);
+        res.json({ success: true });
+    } catch (err) {
         res.status(500).json({ error: 'Server error' });
     }
 });
