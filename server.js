@@ -19,6 +19,119 @@ app.use(express.json({ limit: '50mb' })); // large limit for base64 images
 // Health check
 app.get('/', (req, res) => res.json({ status: 'Tenderable API running' }));
 
+// ── AUTO SETUP — creates all tables if they don't exist ──────────────────────
+app.get('/setup', async (req, res) => {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id VARCHAR(50) PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                pin_hash VARCHAR(100) NOT NULL,
+                role VARCHAR(20) NOT NULL CHECK (role IN ('buyer', 'supplier', 'stakeholder')),
+                company VARCHAR(100),
+                categories TEXT[],
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS developments (
+                id VARCHAR(50) PRIMARY KEY,
+                brand VARCHAR(100),
+                category VARCHAR(50),
+                description TEXT,
+                season_code VARCHAR(20),
+                fabric TEXT,
+                price_target NUMERIC(10,2),
+                order_qty INTEGER,
+                lead_time_target INTEGER,
+                labelling_reqs TEXT,
+                files JSONB DEFAULT '[]',
+                specs_files JSONB DEFAULT '[]',
+                products JSONB DEFAULT '[]',
+                created_by VARCHAR(50),
+                created_at TIMESTAMP DEFAULT NOW(),
+                edited_at TIMESTAMP
+            )
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS dev_comments (
+                id VARCHAR(50) PRIMARY KEY,
+                dev_id VARCHAR(50) REFERENCES developments(id) ON DELETE CASCADE,
+                author_name VARCHAR(100),
+                author_type VARCHAR(20),
+                text TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS tenders (
+                id VARCHAR(50) PRIMARY KEY,
+                brand VARCHAR(100),
+                category VARCHAR(50),
+                description TEXT,
+                season_code VARCHAR(20),
+                fabric TEXT,
+                price_target NUMERIC(10,2),
+                order_qty INTEGER,
+                lead_time_target INTEGER,
+                deadline INTEGER,
+                deadline_date TIMESTAMP,
+                labelling_reqs TEXT,
+                files JSONB DEFAULT '[]',
+                specs_files JSONB DEFAULT '[]',
+                products JSONB DEFAULT '[]',
+                sent_from_dev VARCHAR(50),
+                created_by VARCHAR(50),
+                created_at TIMESTAMP DEFAULT NOW(),
+                edited_at TIMESTAMP
+            )
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS bids (
+                id VARCHAR(50) PRIMARY KEY,
+                tender_id VARCHAR(50) REFERENCES tenders(id) ON DELETE CASCADE,
+                supplier_id VARCHAR(50),
+                supplier_name VARCHAR(100),
+                price NUMERIC(10,2),
+                counter_price NUMERIC(10,2),
+                lead_time INTEGER,
+                status VARCHAR(20) DEFAULT 'submitted',
+                is_multi_product BOOLEAN DEFAULT FALSE,
+                product_bids JSONB DEFAULT '[]',
+                negotiation_history JSONB DEFAULT '[]',
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS messages (
+                id VARCHAR(50) PRIMARY KEY,
+                bid_id VARCHAR(50) REFERENCES bids(id) ON DELETE CASCADE,
+                sender_id VARCHAR(50),
+                sender_name VARCHAR(100),
+                sender_type VARCHAR(20),
+                message TEXT NOT NULL,
+                read_by TEXT[] DEFAULT '{}',
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_tenders_category ON tenders(category)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_bids_tender_id ON bids(tender_id)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_bids_supplier_id ON bids(supplier_id)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_messages_bid_id ON messages(bid_id)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_dev_comments_dev_id ON dev_comments(dev_id)`);
+
+        res.json({ 
+            success: true, 
+            message: 'All tables created successfully! You can now register and use Tenderable.',
+            tables: ['users', 'developments', 'dev_comments', 'tenders', 'bids', 'messages']
+        });
+    } catch (err) {
+        console.error('Setup error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ── AUTH ──────────────────────────────────────────────────────────────────────
 
 // Register
