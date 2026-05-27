@@ -232,6 +232,18 @@ app.get('/admin/users', async (req, res) => {
     }
 });
 
+// List approved suppliers (used by supplier picker and Agreed Offline)
+app.get('/suppliers', async (req, res) => {
+    try {
+        const result = await pool.query(
+            "SELECT id, name, company, categories FROM users WHERE role = 'supplier' AND status = 'approved' ORDER BY company ASC"
+        );
+        res.json({ suppliers: result.rows });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 // Approve user
 app.post('/admin/approve/:userId', async (req, res) => {
     try {
