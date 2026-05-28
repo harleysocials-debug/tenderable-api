@@ -82,6 +82,7 @@ app.get('/setup', async (req, res) => {
                 specs_files JSONB DEFAULT '[]',
                 products JSONB DEFAULT '[]',
                 sent_from_dev VARCHAR(50),
+                invited_suppliers JSONB DEFAULT '[]',
                 created_by VARCHAR(50),
                 created_at TIMESTAMP DEFAULT NOW(),
                 edited_at TIMESTAMP
@@ -124,6 +125,8 @@ app.get('/setup', async (req, res) => {
 
         // Add status column to existing users table if it doesn't exist
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending'`);
+        // Add invited_suppliers to tenders
+        await pool.query(`ALTER TABLE tenders ADD COLUMN IF NOT EXISTS invited_suppliers JSONB DEFAULT '[]'`);
         // Make sure Harley's account is approved if it exists
         await pool.query(`UPDATE users SET status = 'approved' WHERE LOWER(name) = 'harley killingsworth'`);
 
@@ -206,6 +209,20 @@ app.post('/auth/login', async (req, res) => {
     }
 });
 
+// ── SUPPLIERS ────────────────────────────────────────────────────────────────
+
+// Get all approved supplier companies
+app.get('/suppliers', async (req, res) => {
+    try {
+        const result = await pool.query(
+            "SELECT DISTINCT company, categories FROM users WHERE role = 'supplier' AND status = 'approved' AND company IS NOT NULL AND company != '' ORDER BY company ASC"
+        );
+        res.json({ suppliers: result.rows });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 // ── ADMIN ────────────────────────────────────────────────────────────────────
 
 // Get all pending users (admin only)
@@ -227,18 +244,6 @@ app.get('/admin/users', async (req, res) => {
             "SELECT id, name, role, company, categories, status, created_at FROM users ORDER BY company ASC, created_at DESC"
         );
         res.json({ users: result.rows });
-    } catch (err) {
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// List approved suppliers (used by supplier picker and Agreed Offline)
-app.get('/suppliers', async (req, res) => {
-    try {
-        const result = await pool.query(
-            "SELECT id, name, company, categories FROM users WHERE role = 'supplier' AND status = 'approved' ORDER BY company ASC"
-        );
-        res.json({ suppliers: result.rows });
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
     }
@@ -283,7 +288,7 @@ app.get('/developments', async (req, res) => {
         let params = [];
         if ((role === 'buyer' || role === 'stakeholder') && company && company.trim() !== '') {
             // Only show developments from users in the same company
-            query = 'SELECT d.* FROM developments d JOIN users u ON d.created_by = u.id WHERE LOWER(u.company) = LOWER($1) ORDER BY d.created_at DESC';
+            query = 'SELECT d.* FROM developments d LEFT JOIN users u ON d.created_by = u.id WHERE LOWER(COALESCE(u.company,\'\')) = LOWER($1) ORDER BY d.created_at DESC';
             params = [company];
         }
         const result = await pool.query(query, params);
@@ -382,15 +387,23 @@ app.get('/tenders', async (req, res) => {
         if (role === 'buyer' && company && company.trim() !== '') {
             // Buyers only see tenders from their own company
             result = await pool.query(
-                'SELECT t.* FROM tenders t JOIN users u ON t.created_by = u.id WHERE LOWER(u.company) = LOWER($1) ORDER BY t.created_at DESC',
+                'SELECT t.* FROM tenders t LEFT JOIN users u ON t.created_by = u.id WHERE LOWER(COALESCE(u.company,\'\')) = LOWER($1) ORDER BY t.created_at DESC',
                 [company]
             );
         } else if (role === 'supplier' && categories) {
-            // Suppliers see all tenders matching their categories
+            // Suppliers see tenders matching their categories
+            // BUT if tender has invited_suppliers, only show if their company is invited
             const cats = categories.split(',');
+            const supplierCompany = req.query.supplierCompany || '';
             result = await pool.query(
-                'SELECT * FROM tenders WHERE category = ANY($1) ORDER BY created_at DESC',
-                [cats]
+                `SELECT * FROM tenders WHERE category = ANY($1)
+                 AND (
+                     invited_suppliers IS NULL
+                     OR invited_suppliers = '[]'::jsonb
+                     OR invited_suppliers @> $2::jsonb
+                 )
+                 ORDER BY created_at DESC`,
+                [cats, JSON.stringify([supplierCompany.toLowerCase()])]
             );
         } else {
             result = await pool.query('SELECT * FROM tenders ORDER BY created_at DESC');
@@ -406,12 +419,14 @@ app.post('/tenders', async (req, res) => {
     try {
         const t = req.body;
         await pool.query(
-            `INSERT INTO tenders (id,brand,category,description,season_code,fabric,price_target,order_qty,lead_time_target,deadline,deadline_date,labelling_reqs,files,specs_files,products,sent_from_dev,created_by,created_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+            `INSERT INTO tenders (id,brand,category,description,season_code,fabric,price_target,order_qty,lead_time_target,deadline,deadline_date,labelling_reqs,files,specs_files,products,sent_from_dev,invited_suppliers,created_by,created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
             [t.id, t.brand, t.category, t.description, t.seasonCode, t.fabric,
              t.priceTarget, t.orderQty, t.leadTimeTarget, t.deadline, t.deadlineDate,
              t.labellingReqs, JSON.stringify(t.files||[]), JSON.stringify(t.specsFiles||[]),
-             JSON.stringify(t.products||[]), t.sentFromDev||null, t.createdBy, t.createdAt||new Date()]
+             JSON.stringify(t.products||[]), t.sentFromDev||null,
+             JSON.stringify((t.invitedSuppliers||[]).map(s => s.toLowerCase())),
+             t.createdBy, t.createdAt||new Date()]
         );
         res.json({ success: true });
     } catch (err) {
@@ -462,7 +477,7 @@ app.get('/bids', async (req, res) => {
         } else if (role === 'buyer' && company) {
             // Buyers see all bids on their company tenders
             result = await pool.query(
-                'SELECT b.* FROM bids b JOIN tenders t ON b.tender_id = t.id JOIN users u ON t.created_by = u.id WHERE LOWER(u.company) = LOWER($1) ORDER BY b.created_at DESC',
+                'SELECT b.* FROM bids b JOIN tenders t ON b.tender_id = t.id LEFT JOIN users u ON t.created_by = u.id WHERE LOWER(COALESCE(u.company,\'\')) = LOWER($1) ORDER BY b.created_at DESC',
                 [company]
             );
         } else {
