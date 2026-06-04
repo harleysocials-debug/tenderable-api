@@ -327,14 +327,14 @@ app.post('/developments', async (req, res) => {
         const d = req.body;
         const id = d.id || ('dev-' + Date.now());
         await pool.query(
-            `INSERT INTO developments (id,brand,category,description,season_code,fabric,price_target,order_qty,lead_time_target,labelling_reqs,files,specs_files,products,created_by,created_at,stage,store_grade,department,supplier_allocation)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+            `INSERT INTO developments (id,brand,category,description,season_code,fabric,price_target,order_qty,lead_time_target,labelling_reqs,files,specs_files,products,created_by,created_at,stage,store_grade,department,supplier_allocation,theme)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
             [id, d.brand, d.category, d.description, d.seasonCode, d.fabric,
              d.priceTarget||0, d.orderQty||0, d.leadTimeTarget, d.labellingReqs,
              JSON.stringify(d.files||[]), JSON.stringify(d.specsFiles||[]),
              JSON.stringify(d.products||[]),
              req.headers['x-user-id'] || d.createdBy, new Date(),
-             d.stage||'concept', d.storeGrade||null, d.department||null, d.supplierAllocation||null]
+             d.stage||'concept', d.storeGrade||null, d.department||null, d.supplierAllocation||null, d.theme||null]
         );
         res.json({ success: true, development: { id, ...d } });
     } catch (err) {
@@ -351,14 +351,14 @@ app.put('/developments/:id', async (req, res) => {
              price_target=$6,order_qty=$7,lead_time_target=$8,labelling_reqs=$9,
              files=$10,specs_files=$11,products=$12,
              stage=$13,store_grade=$14,department=$15,supplier_allocation=$16,
-             agreed_price=$17,agreed_supplier=$18,status=$19,
-             edited_at=NOW() WHERE id=$20`,
+             agreed_price=$17,agreed_supplier=$18,status=$19,theme=$20,
+             edited_at=NOW() WHERE id=$21`,
             [d.brand, d.category, d.description, d.seasonCode, d.fabric,
              d.priceTarget||0, d.orderQty||0, d.leadTimeTarget, d.labellingReqs,
              JSON.stringify(d.files||[]), JSON.stringify(d.specsFiles||[]),
              JSON.stringify(d.products||[]),
              d.stage||'concept', d.storeGrade||null, d.department||null, d.supplierAllocation||null,
-             d.agreedPrice||null, d.agreedSupplier||null, d.status||'active',
+             d.agreedPrice||null, d.agreedSupplier||null, d.status||'active', d.theme||null,
              req.params.id]
         );
         res.json({ success: true });
@@ -623,6 +623,7 @@ function formatDev(d) {
         agreedPrice: d.agreed_price||null,
         agreedSupplier: d.agreed_supplier||null,
         agreedAt: d.agreed_at||null,
+        theme: d.theme||null,
         status: d.status||'active',
         createdBy: d.created_by, createdAt: d.created_at, editedAt: d.edited_at
     };
