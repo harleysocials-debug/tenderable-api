@@ -316,8 +316,8 @@ app.get('/developments', async (req, res) => {
                 if (!comments[c.dev_id]) comments[c.dev_id] = [];
                 comments[c.dev_id].push({
                     id: c.id, devId: c.dev_id,
-                    author: c.author_name, authorType: c.author_type,
-                    text: c.text, timestamp: c.created_at
+                    userName: c.author_name, authorType: c.author_type,
+                    comment: c.text, createdAt: c.created_at
                 });
             });
         }
@@ -355,20 +355,40 @@ app.post('/developments', async (req, res) => {
 app.put('/developments/:id', async (req, res) => {
     try {
         const d = req.body;
+        const id = req.params.id;
+        const fields = [];
+        const values = [];
+        let idx = 1;
+        const add = (col, val) => { fields.push(`${col}=$${idx++}`); values.push(val); };
+
+        if (d.brand !== undefined)              add('brand', d.brand);
+        if (d.category !== undefined)           add('category', d.category);
+        if (d.description !== undefined)        add('description', d.description);
+        if (d.seasonCode !== undefined)         add('season_code', d.seasonCode);
+        if (d.fabric !== undefined)             add('fabric', d.fabric);
+        if (d.priceTarget !== undefined)        add('price_target', d.priceTarget||0);
+        if (d.orderQty !== undefined)           add('order_qty', d.orderQty||0);
+        if (d.leadTimeTarget !== undefined)     add('lead_time_target', d.leadTimeTarget);
+        if (d.labellingReqs !== undefined)      add('labelling_reqs', d.labellingReqs);
+        if (d.files !== undefined)              add('files', JSON.stringify(d.files||[]));
+        if (d.specsFiles !== undefined)         add('specs_files', JSON.stringify(d.specsFiles||[]));
+        if (d.products !== undefined)           add('products', JSON.stringify(d.products||[]));
+        if (d.stage !== undefined)              add('stage', d.stage);
+        if (d.storeGrade !== undefined)         add('store_grade', d.storeGrade);
+        if (d.department !== undefined)         add('department', d.department);
+        if (d.supplierAllocation !== undefined) add('supplier_allocation', d.supplierAllocation);
+        if (d.agreedPrice !== undefined)        add('agreed_price', d.agreedPrice);
+        if (d.agreedSupplier !== undefined)     add('agreed_supplier', d.agreedSupplier);
+        if (d.agreedAt !== undefined)           add('agreed_at', d.agreedAt);
+        if (d.status !== undefined)             add('status', d.status);
+        if (d.theme !== undefined)              add('theme', d.theme);
+
+        if (fields.length === 0) return res.json({ success: true });
+        fields.push(`edited_at=NOW()`);
+        values.push(id);
         await pool.query(
-            `UPDATE developments SET brand=$1,category=$2,description=$3,season_code=$4,fabric=$5,
-             price_target=$6,order_qty=$7,lead_time_target=$8,labelling_reqs=$9,
-             files=$10,specs_files=$11,products=$12,
-             stage=$13,store_grade=$14,department=$15,supplier_allocation=$16,
-             agreed_price=$17,agreed_supplier=$18,status=$19,theme=$20,
-             edited_at=NOW() WHERE id=$21`,
-            [d.brand, d.category, d.description, d.seasonCode, d.fabric,
-             d.priceTarget||0, d.orderQty||0, d.leadTimeTarget, d.labellingReqs,
-             JSON.stringify(d.files||[]), JSON.stringify(d.specsFiles||[]),
-             JSON.stringify(d.products||[]),
-             d.stage||'concept', d.storeGrade||null, d.department||null, d.supplierAllocation||null,
-             d.agreedPrice||null, d.agreedSupplier||null, d.status||'active', d.theme||null,
-             req.params.id]
+            `UPDATE developments SET ${fields.join(', ')} WHERE id=$${idx}`,
+            values
         );
         res.json({ success: true });
     } catch (err) {
@@ -389,12 +409,15 @@ app.delete('/developments/:id', async (req, res) => {
 // Dev comments
 app.post('/developments/:id/comments', async (req, res) => {
     try {
-        const { id, author, authorType, text, timestamp } = req.body;
+        const body = req.body;
+        const commentId = 'cmt-' + Date.now();
+        const userName = req.headers['x-user-name'] || body.userName || body.author || 'Unknown';
+        const commentText = body.comment || body.text || '';
         await pool.query(
             'INSERT INTO dev_comments (id,dev_id,author_name,author_type,text,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
-            [id, req.params.id, author, authorType, text, timestamp || new Date()]
+            [commentId, req.params.id, userName, 'buyer', commentText, new Date()]
         );
-        res.json({ success: true });
+        res.json({ success: true, comment: { id: commentId, userName, comment: commentText, createdAt: new Date() } });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Server error' });
