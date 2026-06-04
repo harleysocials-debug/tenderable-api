@@ -325,18 +325,21 @@ app.get('/developments', async (req, res) => {
 app.post('/developments', async (req, res) => {
     try {
         const d = req.body;
+        const id = d.id || ('dev-' + Date.now());
         await pool.query(
-            `INSERT INTO developments (id,brand,category,description,season_code,fabric,price_target,order_qty,lead_time_target,labelling_reqs,files,specs_files,products,created_by,created_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-            [d.id, d.brand, d.category, d.description, d.seasonCode, d.fabric,
-             d.priceTarget, d.orderQty, d.leadTimeTarget, d.labellingReqs,
+            `INSERT INTO developments (id,brand,category,description,season_code,fabric,price_target,order_qty,lead_time_target,labelling_reqs,files,specs_files,products,created_by,created_at,stage,store_grade,department,supplier_allocation)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+            [id, d.brand, d.category, d.description, d.seasonCode, d.fabric,
+             d.priceTarget||0, d.orderQty||0, d.leadTimeTarget, d.labellingReqs,
              JSON.stringify(d.files||[]), JSON.stringify(d.specsFiles||[]),
-             JSON.stringify(d.products||[]), d.createdBy, d.createdAt || new Date()]
+             JSON.stringify(d.products||[]),
+             req.headers['x-user-id'] || d.createdBy, new Date(),
+             d.stage||'concept', d.storeGrade||null, d.department||null, d.supplierAllocation||null]
         );
-        res.json({ success: true });
+        res.json({ success: true, development: { id, ...d } });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Server error' });
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -346,16 +349,22 @@ app.put('/developments/:id', async (req, res) => {
         await pool.query(
             `UPDATE developments SET brand=$1,category=$2,description=$3,season_code=$4,fabric=$5,
              price_target=$6,order_qty=$7,lead_time_target=$8,labelling_reqs=$9,
-             files=$10,specs_files=$11,products=$12,edited_at=NOW() WHERE id=$13`,
+             files=$10,specs_files=$11,products=$12,
+             stage=$13,store_grade=$14,department=$15,supplier_allocation=$16,
+             agreed_price=$17,agreed_supplier=$18,status=$19,
+             edited_at=NOW() WHERE id=$20`,
             [d.brand, d.category, d.description, d.seasonCode, d.fabric,
-             d.priceTarget, d.orderQty, d.leadTimeTarget, d.labellingReqs,
+             d.priceTarget||0, d.orderQty||0, d.leadTimeTarget, d.labellingReqs,
              JSON.stringify(d.files||[]), JSON.stringify(d.specsFiles||[]),
-             JSON.stringify(d.products||[]), req.params.id]
+             JSON.stringify(d.products||[]),
+             d.stage||'concept', d.storeGrade||null, d.department||null, d.supplierAllocation||null,
+             d.agreedPrice||null, d.agreedSupplier||null, d.status||'active',
+             req.params.id]
         );
         res.json({ success: true });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Server error' });
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -606,7 +615,15 @@ function formatDev(d) {
         orderQty: d.order_qty, leadTimeTarget: d.lead_time_target,
         labellingReqs: d.labelling_reqs,
         files: d.files||[], specsFiles: d.specs_files||[],
-        products: d.products||[], status: 'development',
+        products: d.products||[],
+        stage: d.stage||'concept',
+        storeGrade: d.store_grade||null,
+        department: d.department||null,
+        supplierAllocation: d.supplier_allocation||null,
+        agreedPrice: d.agreed_price||null,
+        agreedSupplier: d.agreed_supplier||null,
+        agreedAt: d.agreed_at||null,
+        status: d.status||'active',
         createdBy: d.created_by, createdAt: d.created_at, editedAt: d.edited_at
     };
 }
