@@ -424,6 +424,15 @@ app.post('/developments/:id/comments', async (req, res) => {
     }
 });
 
+app.delete('/developments/:devId/comments/:commentId', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM dev_comments WHERE id=$1 AND dev_id=$2', [req.params.commentId, req.params.devId]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 // ── TENDERS ───────────────────────────────────────────────────────────────────
 
 app.get('/tenders', async (req, res) => {
