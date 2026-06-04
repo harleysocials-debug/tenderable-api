@@ -292,8 +292,14 @@ app.get('/developments', async (req, res) => {
         let query = 'SELECT * FROM developments ORDER BY created_at DESC';
         let params = [];
         if ((role === 'buyer' || role === 'stakeholder') && company && company.trim() !== '') {
-            // Only show developments from users in the same company
-            query = 'SELECT d.* FROM developments d LEFT JOIN users u ON d.created_by = u.id WHERE LOWER(COALESCE(u.company,\'\')) = LOWER($1) ORDER BY d.created_at DESC';
+            // Include devs where created_by matches a user in same company
+            // OR where created_by doesn't match any user (orphaned devs — still show them)
+            query = `SELECT d.* FROM developments d
+                     LEFT JOIN users u ON d.created_by = u.id
+                     WHERE LOWER(COALESCE(u.company,'')) = LOWER($1)
+                        OR u.id IS NULL
+                        OR d.created_by IS NULL
+                     ORDER BY d.created_at DESC`;
             params = [company];
         }
         const result = await pool.query(query, params);
@@ -327,16 +333,19 @@ app.post('/developments', async (req, res) => {
         const d = req.body;
         const id = d.id || ('dev-' + Date.now());
         await pool.query(
-            `INSERT INTO developments (id,brand,category,description,season_code,fabric,price_target,order_qty,lead_time_target,labelling_reqs,files,specs_files,products,created_by,created_at,stage,store_grade,department,supplier_allocation,theme)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+            `INSERT INTO developments (id,brand,category,description,season_code,fabric,price_target,order_qty,lead_time_target,labelling_reqs,files,specs_files,products,created_by,created_at,stage,store_grade,department,supplier_allocation,theme,company)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
             [id, d.brand, d.category, d.description, d.seasonCode, d.fabric,
              d.priceTarget||0, d.orderQty||0, d.leadTimeTarget, d.labellingReqs,
              JSON.stringify(d.files||[]), JSON.stringify(d.specsFiles||[]),
              JSON.stringify(d.products||[]),
              req.headers['x-user-id'] || d.createdBy, new Date(),
-             d.stage||'concept', d.storeGrade||null, d.department||null, d.supplierAllocation||null, d.theme||null]
+             d.stage||'inspiration', d.storeGrade||null, d.department||null, d.supplierAllocation||null, d.theme||null, req.headers['x-user-company']||d.company||null]
         );
-        res.json({ success: true, development: { id, ...d } });
+        // Re-fetch the newly created dev so formatDev normalises it correctly
+        const newDev = await pool.query('SELECT * FROM developments WHERE id = $1', [id]);
+        const formatted = newDev.rows[0] ? formatDev(newDev.rows[0]) : { id, ...d };
+        res.json({ success: true, development: formatted });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });
