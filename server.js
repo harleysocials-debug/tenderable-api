@@ -133,7 +133,9 @@ app.get('/setup', async (req, res) => {
                 shoot_date DATE,
                 location VARCHAR(200),
                 season VARCHAR(50),
-                photographer VARCHAR(200),
+                shoot_type VARCHAR(50),
+                trade_deadline DATE,
+                samples_ready_by DATE,
                 brand VARCHAR(100),
                 status VARCHAR(50) DEFAULT 'draft',
                 looks JSONB DEFAULT '[]',
@@ -542,10 +544,11 @@ app.post('/packs', async (req, res) => {
         const d = req.body;
         const id = 'pack-' + Date.now();
         await pool.query(
-            `INSERT INTO packs (id,name,shoot_date,location,season,photographer,brand,status,looks,created_by,created_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())`,
+            `INSERT INTO packs (id,name,shoot_date,location,season,shoot_type,trade_deadline,samples_ready_by,brand,status,looks,created_by,created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())`,
             [id, d.name, d.shootDate||null, d.location||null, d.season||null,
-             d.photographer||null, d.brand||null, d.status||'draft',
+             d.shootType||null, d.tradeDeadline||null, d.samplesReadyBy||null,
+             d.brand||null, d.status||'draft',
              JSON.stringify(d.looks||[]), req.headers['x-user-id']]
         );
         const r = await pool.query('SELECT * FROM packs WHERE id=$1', [id]);
@@ -562,7 +565,9 @@ app.put('/packs/:id', async (req, res) => {
         if(d.shootDate !== undefined) add('shoot_date', d.shootDate||null);
         if(d.location !== undefined) add('location', d.location||null);
         if(d.season !== undefined) add('season', d.season||null);
-        if(d.photographer !== undefined) add('photographer', d.photographer||null);
+        if(d.shootType !== undefined) add('shoot_type', d.shootType||null);
+        if(d.tradeDeadline !== undefined) add('trade_deadline', d.tradeDeadline||null);
+        if(d.samplesReadyBy !== undefined) add('samples_ready_by', d.samplesReadyBy||null);
         if(d.brand !== undefined) add('brand', d.brand||null);
         if(d.status !== undefined) add('status', d.status);
         if(d.looks !== undefined) add('looks', JSON.stringify(d.looks));
