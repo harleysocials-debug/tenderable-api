@@ -127,6 +127,22 @@ app.get('/setup', async (req, res) => {
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_bids_supplier_id ON bids(supplier_id)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_messages_bid_id ON messages(bid_id)`);
         await pool.query(`
+            CREATE TABLE IF NOT EXISTS packs (
+                id VARCHAR(100) PRIMARY KEY,
+                name VARCHAR(200) NOT NULL,
+                shoot_date DATE,
+                location VARCHAR(200),
+                season VARCHAR(50),
+                photographer VARCHAR(200),
+                brand VARCHAR(100),
+                status VARCHAR(50) DEFAULT 'draft',
+                looks JSONB DEFAULT '[]',
+                created_by VARCHAR(100),
+                created_at TIMESTAMP DEFAULT NOW(),
+                edited_at TIMESTAMP
+            )
+        `);
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS direct_messages (
                 id VARCHAR(100) PRIMARY KEY,
                 from_user_id VARCHAR(100) NOT NULL,
@@ -507,6 +523,62 @@ app.delete('/direct-messages/:id', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+});
+
+
+// ── PACKS ─────────────────────────────────────────────────────────────────────
+
+app.get('/packs', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM packs ORDER BY created_at DESC');
+        res.json({ packs: result.rows.map(p => ({
+            ...p, looks: p.looks || []
+        }))});
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
+
+app.post('/packs', async (req, res) => {
+    try {
+        const d = req.body;
+        const id = 'pack-' + Date.now();
+        await pool.query(
+            `INSERT INTO packs (id,name,shoot_date,location,season,photographer,brand,status,looks,created_by,created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())`,
+            [id, d.name, d.shootDate||null, d.location||null, d.season||null,
+             d.photographer||null, d.brand||null, d.status||'draft',
+             JSON.stringify(d.looks||[]), req.headers['x-user-id']]
+        );
+        const r = await pool.query('SELECT * FROM packs WHERE id=$1', [id]);
+        res.json({ success: true, pack: r.rows[0] });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
+
+app.put('/packs/:id', async (req, res) => {
+    try {
+        const d = req.body;
+        const fields = []; const values = []; let idx = 1;
+        const add = (col, val) => { fields.push(`${col}=$${idx++}`); values.push(val); };
+        if(d.name !== undefined) add('name', d.name);
+        if(d.shootDate !== undefined) add('shoot_date', d.shootDate||null);
+        if(d.location !== undefined) add('location', d.location||null);
+        if(d.season !== undefined) add('season', d.season||null);
+        if(d.photographer !== undefined) add('photographer', d.photographer||null);
+        if(d.brand !== undefined) add('brand', d.brand||null);
+        if(d.status !== undefined) add('status', d.status);
+        if(d.looks !== undefined) add('looks', JSON.stringify(d.looks));
+        if(!fields.length) return res.json({ success: true });
+        fields.push(`edited_at=NOW()`);
+        values.push(req.params.id);
+        await pool.query(`UPDATE packs SET ${fields.join(',')} WHERE id=$${idx}`, values);
+        res.json({ success: true });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/packs/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM packs WHERE id=$1', [req.params.id]);
+        res.json({ success: true });
+    } catch(err){ res.status(500).json({ error: err.message }); }
 });
 
 // ── TENDERS ───────────────────────────────────────────────────────────────────
