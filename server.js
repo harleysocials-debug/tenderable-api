@@ -126,6 +126,18 @@ app.get('/setup', async (req, res) => {
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_bids_tender_id ON bids(tender_id)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_bids_supplier_id ON bids(supplier_id)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_messages_bid_id ON messages(bid_id)`);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS direct_messages (
+                id VARCHAR(100) PRIMARY KEY,
+                from_user_id VARCHAR(100) NOT NULL,
+                from_user_name VARCHAR(200),
+                to_user_id VARCHAR(100) NOT NULL,
+                to_user_name VARCHAR(200),
+                message TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                read_at TIMESTAMP
+            )
+        `);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_dev_comments_dev_id ON dev_comments(dev_id)`);
 
         // Add status column to existing users table if it doesn't exist
@@ -431,6 +443,69 @@ app.delete('/developments/:devId/comments/:commentId', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
+    }
+});
+
+
+// ── DIRECT MESSAGING ─────────────────────────────────────────────────────────
+
+app.get('/direct-messages', async (req, res) => {
+    try {
+        const userId = req.headers['x-user-id'];
+        const result = await pool.query(
+            `SELECT * FROM direct_messages
+             WHERE from_user_id=$1 OR to_user_id=$1
+             ORDER BY created_at ASC`,
+            [userId]
+        );
+        res.json({ messages: result.rows });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/direct-messages', async (req, res) => {
+    try {
+        const { toUserId, toUserName, message } = req.body;
+        const fromUserId = req.headers['x-user-id'];
+        const fromUserName = req.headers['x-user-name'];
+        const id = 'dm-' + Date.now();
+        await pool.query(
+            `INSERT INTO direct_messages (id,from_user_id,from_user_name,to_user_id,to_user_name,message,created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,NOW())`,
+            [id, fromUserId, fromUserName, toUserId, toUserName, message]
+        );
+        res.json({ success: true, id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/direct-messages/read', async (req, res) => {
+    try {
+        const userId = req.headers['x-user-id'];
+        const { fromUserId } = req.body;
+        await pool.query(
+            `UPDATE direct_messages SET read_at=NOW()
+             WHERE to_user_id=$1 AND from_user_id=$2 AND read_at IS NULL`,
+            [userId, fromUserId]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/direct-messages/:id', async (req, res) => {
+    try {
+        const userId = req.headers['x-user-id'];
+        await pool.query(
+            `DELETE FROM direct_messages WHERE id=$1 AND from_user_id=$2`,
+            [req.params.id, userId]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
