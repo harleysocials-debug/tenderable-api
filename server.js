@@ -333,14 +333,14 @@ app.post('/developments', async (req, res) => {
         const d = req.body;
         const id = d.id || ('dev-' + Date.now());
         await pool.query(
-            `INSERT INTO developments (id,brand,category,description,season_code,fabric,price_target,order_qty,lead_time_target,labelling_reqs,files,specs_files,products,created_by,created_at,stage,store_grade,department,supplier_allocation,theme,company)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+            `INSERT INTO developments (id,brand,category,description,season_code,fabric,price_target,order_qty,lead_time_target,labelling_reqs,files,specs_files,products,created_by,created_at,stage,store_grade,department,supplier_allocation,theme,company,block)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
             [id, d.brand, d.category, d.description, d.seasonCode, d.fabric,
              d.priceTarget||0, d.orderQty||0, d.leadTimeTarget, d.labellingReqs,
              JSON.stringify(d.files||[]), JSON.stringify(d.specsFiles||[]),
              JSON.stringify(d.products||[]),
              req.headers['x-user-id'] || d.createdBy, new Date(),
-             d.stage||'inspiration', d.storeGrade||null, d.department||null, d.supplierAllocation||null, d.theme||null, req.headers['x-user-company']||d.company||null]
+             d.stage||'inspiration', d.storeGrade||null, d.department||null, d.supplierAllocation||null, d.theme||null, req.headers['x-user-company']||d.company||null, d.block||null]
         );
         // Re-fetch the newly created dev so formatDev normalises it correctly
         const newDev = await pool.query('SELECT * FROM developments WHERE id = $1', [id]);
@@ -382,6 +382,7 @@ app.put('/developments/:id', async (req, res) => {
         if (d.agreedAt !== undefined)           add('agreed_at', d.agreedAt);
         if (d.status !== undefined)             add('status', d.status);
         if (d.theme !== undefined)              add('theme', d.theme);
+        if (d.block !== undefined)              add('block', d.block);
 
         if (fields.length === 0) return res.json({ success: true });
         fields.push(`edited_at=NOW()`);
@@ -665,6 +666,7 @@ function formatDev(d) {
         agreedSupplier: d.agreed_supplier||null,
         agreedAt: d.agreed_at||null,
         theme: d.theme||null,
+        block: d.block||null,
         status: d.status||'active',
         createdBy: d.created_by, createdAt: d.created_at, editedAt: d.edited_at
     };
