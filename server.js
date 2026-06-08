@@ -127,6 +127,21 @@ app.get('/setup', async (req, res) => {
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_bids_supplier_id ON bids(supplier_id)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_messages_bid_id ON messages(bid_id)`);
         await pool.query(`
+            CREATE TABLE IF NOT EXISTS ecom_styling (
+                id VARCHAR(200) PRIMARY KEY,
+                dev_id VARCHAR(100) NOT NULL,
+                product_idx INTEGER NOT NULL DEFAULT 0,
+                model VARCHAR(200),
+                shot_type VARCHAR(50),
+                styling_notes TEXT,
+                props JSONB DEFAULT '[]',
+                status VARCHAR(50) DEFAULT 'unstyled',
+                company VARCHAR(200),
+                created_at TIMESTAMP DEFAULT NOW(),
+                edited_at TIMESTAMP
+            )
+        `);
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS packs (
                 id VARCHAR(100) PRIMARY KEY,
                 name VARCHAR(200) NOT NULL,
@@ -528,6 +543,39 @@ app.delete('/direct-messages/:id', async (req, res) => {
 });
 
 
+
+// ── ECOM STYLING ──────────────────────────────────────────────────────────────
+
+app.get('/ecom-styling', async (req, res) => {
+    try {
+        const company = req.headers['x-user-company'] || '';
+        const result = await pool.query(
+            'SELECT * FROM ecom_styling WHERE LOWER(company)=LOWER($1)',
+            [company]
+        );
+        res.json({ styles: result.rows });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
+
+app.put('/ecom-styling/:id', async (req, res) => {
+    try {
+        const d = req.body;
+        const company = req.headers['x-user-company'] || '';
+        // Upsert
+        await pool.query(`
+            INSERT INTO ecom_styling (id, dev_id, product_idx, model, shot_type, styling_notes, props, status, company, created_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+            ON CONFLICT (id) DO UPDATE SET
+              model=EXCLUDED.model, shot_type=EXCLUDED.shot_type,
+              styling_notes=EXCLUDED.styling_notes, props=EXCLUDED.props,
+              status=EXCLUDED.status, edited_at=NOW()
+        `, [req.params.id, d.devId, d.productIdx||0, d.model||null,
+            d.shotType||null, d.stylingNotes||null,
+            JSON.stringify(d.props||[]), d.status||'unstyled', company]);
+        res.json({ success: true });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
+
 // ── PACKS ─────────────────────────────────────────────────────────────────────
 
 app.get('/packs', async (req, res) => {
@@ -544,12 +592,12 @@ app.post('/packs', async (req, res) => {
         const d = req.body;
         const id = 'pack-' + Date.now();
         await pool.query(
-            `INSERT INTO packs (id,name,shoot_date,location,season,shoot_type,trade_deadline,samples_ready_by,brand,status,looks,created_by,created_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())`,
+            `INSERT INTO packs (id,name,shoot_date,location,season,shoot_type,trade_deadline,samples_ready_by,brand,status,looks,notes,attachments,created_by,created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())`,
             [id, d.name, d.shootDate||null, d.location||null, d.season||null,
              d.shootType||null, d.tradeDeadline||null, d.samplesReadyBy||null,
              d.brand||null, d.status||'draft',
-             JSON.stringify(d.looks||[]), req.headers['x-user-id']]
+             JSON.stringify(d.looks||[]), d.notes||null, JSON.stringify(d.attachments||[]), req.headers['x-user-id']]
         );
         const r = await pool.query('SELECT * FROM packs WHERE id=$1', [id]);
         res.json({ success: true, pack: r.rows[0] });
@@ -571,6 +619,8 @@ app.put('/packs/:id', async (req, res) => {
         if(d.brand !== undefined) add('brand', d.brand||null);
         if(d.status !== undefined) add('status', d.status);
         if(d.looks !== undefined) add('looks', JSON.stringify(d.looks));
+        if(d.notes !== undefined) add('notes', d.notes||null);
+        if(d.attachments !== undefined) add('attachments', JSON.stringify(d.attachments||[]));
         if(!fields.length) return res.json({ success: true });
         fields.push(`edited_at=NOW()`);
         values.push(req.params.id);
