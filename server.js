@@ -136,6 +136,7 @@ app.get('/setup', async (req, res) => {
                 styling_notes TEXT,
                 props JSONB DEFAULT '[]',
                 status VARCHAR(50) DEFAULT 'unstyled',
+                styling_with JSONB DEFAULT '[]',
                 company VARCHAR(200),
                 created_at TIMESTAMP DEFAULT NOW(),
                 edited_at TIMESTAMP
@@ -563,12 +564,12 @@ app.put('/ecom-styling/:id', async (req, res) => {
         const company = req.headers['x-user-company'] || '';
         // Upsert
         await pool.query(`
-            INSERT INTO ecom_styling (id, dev_id, product_idx, model, shot_type, styling_notes, props, status, company, created_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+            INSERT INTO ecom_styling (id, dev_id, product_idx, model, shot_type, styling_notes, props, status, styling_with, company, created_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
             ON CONFLICT (id) DO UPDATE SET
               model=EXCLUDED.model, shot_type=EXCLUDED.shot_type,
               styling_notes=EXCLUDED.styling_notes, props=EXCLUDED.props,
-              status=EXCLUDED.status, edited_at=NOW()
+              status=EXCLUDED.status, styling_with=EXCLUDED.styling_with, edited_at=NOW()
         `, [req.params.id, d.devId, d.productIdx||0, d.model||null,
             d.shotType||null, d.stylingNotes||null,
             JSON.stringify(d.props||[]), d.status||'unstyled', company]);
