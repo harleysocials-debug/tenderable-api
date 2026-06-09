@@ -127,6 +127,30 @@ app.get('/setup', async (req, res) => {
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_bids_supplier_id ON bids(supplier_id)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_messages_bid_id ON messages(bid_id)`);
         await pool.query(`
+            CREATE TABLE IF NOT EXISTS comp_shops (
+                id VARCHAR(100) PRIMARY KEY,
+                name VARCHAR(200) NOT NULL,
+                trip_date DATE,
+                location VARCHAR(200),
+                company VARCHAR(200),
+                created_by VARCHAR(100),
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS comp_shop_images (
+                id VARCHAR(100) PRIMARY KEY,
+                shop_id VARCHAR(100) NOT NULL,
+                image_data TEXT,
+                store VARCHAR(200),
+                notes TEXT,
+                action_flag VARCHAR(100) DEFAULT 'reference',
+                sort_order INTEGER DEFAULT 0,
+                company VARCHAR(200),
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS ecom_styling (
                 id VARCHAR(200) PRIMARY KEY,
                 dev_id VARCHAR(100) NOT NULL,
@@ -544,6 +568,97 @@ app.delete('/direct-messages/:id', async (req, res) => {
 });
 
 
+
+
+// ── COMP SHOP ─────────────────────────────────────────────────────────────────
+
+app.get('/comp-shops', async (req, res) => {
+    try {
+        const company = req.headers['x-user-company'] || '';
+        const shops = await pool.query(
+            `SELECT cs.*, COUNT(ci.id) as image_count
+             FROM comp_shops cs
+             LEFT JOIN comp_shop_images ci ON ci.shop_id = cs.id
+             WHERE LOWER(cs.company)=LOWER($1)
+             GROUP BY cs.id ORDER BY cs.created_at DESC`,
+            [company]
+        );
+        res.json({ shops: shops.rows });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
+
+app.post('/comp-shops', async (req, res) => {
+    try {
+        const d = req.body;
+        const company = req.headers['x-user-company'] || '';
+        const id = 'cs-' + Date.now();
+        await pool.query(
+            `INSERT INTO comp_shops (id,name,trip_date,location,company,created_by,created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,NOW())`,
+            [id, d.name, d.tripDate||null, d.location||null, company, req.headers['x-user-id']]
+        );
+        const r = await pool.query('SELECT * FROM comp_shops WHERE id=$1', [id]);
+        res.json({ success: true, shop: r.rows[0] });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/comp-shops/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM comp_shop_images WHERE shop_id=$1', [req.params.id]);
+        await pool.query('DELETE FROM comp_shops WHERE id=$1', [req.params.id]);
+        res.json({ success: true });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
+
+app.get('/comp-shops/:id/images', async (req, res) => {
+    try {
+        const r = await pool.query(
+            'SELECT * FROM comp_shop_images WHERE shop_id=$1 ORDER BY sort_order ASC, created_at ASC',
+            [req.params.id]
+        );
+        res.json({ images: r.rows });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
+
+app.post('/comp-shops/:id/images', async (req, res) => {
+    try {
+        const company = req.headers['x-user-company'] || '';
+        const images = req.body.images || [];
+        for (let i = 0; i < images.length; i++) {
+            const img = images[i];
+            const imgId = 'ci-' + Date.now() + '-' + i;
+            await pool.query(
+                `INSERT INTO comp_shop_images (id,shop_id,image_data,store,notes,action_flag,sort_order,company,created_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())`,
+                [imgId, req.params.id, img.imageData||null, img.store||null,
+                 img.notes||null, img.actionFlag||'reference', img.sortOrder||i, company]
+            );
+        }
+        res.json({ success: true });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
+
+app.put('/comp-shop-images/:id', async (req, res) => {
+    try {
+        const d = req.body;
+        const fields = []; const values = []; let idx = 1;
+        const add = (col, val) => { fields.push(`${col}=$${idx++}`); values.push(val); };
+        if(d.store !== undefined) add('store', d.store);
+        if(d.notes !== undefined) add('notes', d.notes);
+        if(d.actionFlag !== undefined) add('action_flag', d.actionFlag);
+        if(!fields.length) return res.json({ success: true });
+        values.push(req.params.id);
+        await pool.query(`UPDATE comp_shop_images SET ${fields.join(',')} WHERE id=$${idx}`, values);
+        res.json({ success: true });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/comp-shop-images/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM comp_shop_images WHERE id=$1', [req.params.id]);
+        res.json({ success: true });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
 
 // ── ECOM STYLING ──────────────────────────────────────────────────────────────
 
