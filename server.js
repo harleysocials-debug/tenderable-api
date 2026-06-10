@@ -590,22 +590,12 @@ app.delete('/direct-messages/:id', async (req, res) => {
 
 app.get('/suppliers', async (req, res) => {
     try {
-        const company = req.headers['x-user-company'] || '';
-        let r;
-        if(company){
-            r = await pool.query(
-                'SELECT * FROM suppliers WHERE LOWER(company)=LOWER($1) ORDER BY name ASC',
-                [company]
-            );
-            // Fallback: if no results, return unfiltered (handles company mismatch edge cases)
-            if(r.rows.length === 0){
-                r = await pool.query('SELECT * FROM suppliers ORDER BY name ASC');
-            }
-        } else {
-            r = await pool.query('SELECT * FROM suppliers ORDER BY name ASC');
-        }
+        const r = await pool.query('SELECT * FROM suppliers ORDER BY name ASC');
         res.json({ suppliers: r.rows });
-    } catch(err){ res.status(500).json({ error: err.message }); }
+    } catch(err){ 
+        console.error('GET /suppliers error:', err.message);
+        res.status(500).json({ error: err.message }); 
+    }
 });
 
 app.post('/suppliers', async (req, res) => {
@@ -618,7 +608,10 @@ app.post('/suppliers', async (req, res) => {
             [id, name, email||null, company]
         );
         res.json({ success: true, id });
-    } catch(err){ res.status(500).json({ error: err.message }); }
+    } catch(err){ 
+        console.error('POST /suppliers error:', err.message);
+        res.status(500).json({ error: err.message }); 
+    }
 });
 
 app.put('/suppliers/:id', async (req, res) => {
@@ -1110,16 +1103,21 @@ function formatMessage(m) {
 }
 
 // ── START ─────────────────────────────────────────────────────────────────────
-// Auto-run table setup on startup
-async function autoSetup(){
+// Run critical table creation directly at startup
+async function ensureTables(){
   try {
-    const res = await fetch(`http://localhost:${PORT}/setup`);
-    const data = await res.json();
-    console.log('Auto-setup:', data.message||'done');
-  } catch(e){ console.log('Auto-setup error:', e.message); }
+    await pool.query(`CREATE TABLE IF NOT EXISTS suppliers (
+      id VARCHAR(100) PRIMARY KEY,
+      name VARCHAR(200) NOT NULL,
+      email VARCHAR(300),
+      company VARCHAR(200),
+      created_at TIMESTAMP DEFAULT NOW()
+    )`);
+    console.log('Suppliers table ready');
+  } catch(e){ console.error('ensureTables error:', e.message); }
 }
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Tenderable API running on port ${PORT}`);
-  setTimeout(autoSetup, 2000); // run setup 2s after server starts
+  await ensureTables();
 });
