@@ -127,6 +127,15 @@ app.get('/setup', async (req, res) => {
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_bids_supplier_id ON bids(supplier_id)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_messages_bid_id ON messages(bid_id)`);
         await pool.query(`
+            CREATE TABLE IF NOT EXISTS suppliers (
+                id VARCHAR(100) PRIMARY KEY,
+                name VARCHAR(200) NOT NULL,
+                email VARCHAR(300),
+                company VARCHAR(200),
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS comp_shops (
                 id VARCHAR(100) PRIMARY KEY,
                 name VARCHAR(200) NOT NULL,
@@ -575,6 +584,51 @@ app.delete('/direct-messages/:id', async (req, res) => {
 
 
 
+
+
+// ── SUPPLIERS ─────────────────────────────────────────────────────────────────
+
+app.get('/suppliers', async (req, res) => {
+    try {
+        const company = req.headers['x-user-company'] || '';
+        const r = await pool.query(
+            'SELECT * FROM suppliers WHERE LOWER(company)=LOWER($1) ORDER BY name ASC',
+            [company]
+        );
+        res.json({ suppliers: r.rows });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
+
+app.post('/suppliers', async (req, res) => {
+    try {
+        const company = req.headers['x-user-company'] || '';
+        const { name, email } = req.body;
+        const id = 'sup-' + Date.now();
+        await pool.query(
+            'INSERT INTO suppliers (id,name,email,company,created_at) VALUES ($1,$2,$3,$4,NOW())',
+            [id, name, email||null, company]
+        );
+        res.json({ success: true, id });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
+
+app.put('/suppliers/:id', async (req, res) => {
+    try {
+        const { name, email } = req.body;
+        await pool.query(
+            'UPDATE suppliers SET name=$1, email=$2 WHERE id=$3',
+            [name, email||null, req.params.id]
+        );
+        res.json({ success: true });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/suppliers/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM suppliers WHERE id=$1', [req.params.id]);
+        res.json({ success: true });
+    } catch(err){ res.status(500).json({ error: err.message }); }
+});
 
 // ── COMP SHOP ─────────────────────────────────────────────────────────────────
 
