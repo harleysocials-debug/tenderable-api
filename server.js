@@ -719,6 +719,7 @@ app.put('/comp-shop-images/:id', async (req, res) => {
         if(d.fabric !== undefined) add('fabric', d.fabric);
         if(d.type !== undefined) add('type', d.type);
         if(d.theme !== undefined) add('theme', d.theme);
+        if(d.visitMonth !== undefined) add('visit_month', d.visitMonth);
         if(d.notes !== undefined) add('notes', d.notes);
         if(d.actionFlag !== undefined) add('action_flag', d.actionFlag);
         if(!fields.length) return res.json({ success: true });
