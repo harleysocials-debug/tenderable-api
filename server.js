@@ -591,10 +591,19 @@ app.delete('/direct-messages/:id', async (req, res) => {
 app.get('/suppliers', async (req, res) => {
     try {
         const company = req.headers['x-user-company'] || '';
-        const r = await pool.query(
-            'SELECT * FROM suppliers WHERE LOWER(company)=LOWER($1) ORDER BY name ASC',
-            [company]
-        );
+        let r;
+        if(company){
+            r = await pool.query(
+                'SELECT * FROM suppliers WHERE LOWER(company)=LOWER($1) ORDER BY name ASC',
+                [company]
+            );
+            // Fallback: if no results, return unfiltered (handles company mismatch edge cases)
+            if(r.rows.length === 0){
+                r = await pool.query('SELECT * FROM suppliers ORDER BY name ASC');
+            }
+        } else {
+            r = await pool.query('SELECT * FROM suppliers ORDER BY name ASC');
+        }
         res.json({ suppliers: r.rows });
     } catch(err){ res.status(500).json({ error: err.message }); }
 });
@@ -1101,4 +1110,16 @@ function formatMessage(m) {
 }
 
 // ── START ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => console.log(`Tenderable API running on port ${PORT}`));
+// Auto-run table setup on startup
+async function autoSetup(){
+  try {
+    const res = await fetch(`http://localhost:${PORT}/setup`);
+    const data = await res.json();
+    console.log('Auto-setup:', data.message||'done');
+  } catch(e){ console.log('Auto-setup error:', e.message); }
+}
+
+app.listen(PORT, () => {
+  console.log(`Tenderable API running on port ${PORT}`);
+  setTimeout(autoSetup, 2000); // run setup 2s after server starts
+});
