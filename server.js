@@ -143,6 +143,10 @@ app.get('/setup', async (req, res) => {
                 shop_id VARCHAR(100) NOT NULL,
                 image_data TEXT,
                 store VARCHAR(200),
+                category VARCHAR(200),
+                colour VARCHAR(200),
+                price VARCHAR(50),
+                fabric VARCHAR(200),
                 notes TEXT,
                 action_flag VARCHAR(100) DEFAULT 'reference',
                 sort_order INTEGER DEFAULT 0,
@@ -644,6 +648,10 @@ app.put('/comp-shop-images/:id', async (req, res) => {
         const fields = []; const values = []; let idx = 1;
         const add = (col, val) => { fields.push(`${col}=$${idx++}`); values.push(val); };
         if(d.store !== undefined) add('store', d.store);
+        if(d.category !== undefined) add('category', d.category);
+        if(d.colour !== undefined) add('colour', d.colour);
+        if(d.price !== undefined) add('price', d.price);
+        if(d.fabric !== undefined) add('fabric', d.fabric);
         if(d.notes !== undefined) add('notes', d.notes);
         if(d.actionFlag !== undefined) add('action_flag', d.actionFlag);
         if(!fields.length) return res.json({ success: true });
