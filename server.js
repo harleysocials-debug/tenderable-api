@@ -147,6 +147,8 @@ app.get('/setup', async (req, res) => {
                 colour VARCHAR(200),
                 price VARCHAR(50),
                 fabric VARCHAR(200),
+                type VARCHAR(200),
+                theme VARCHAR(200),
                 notes TEXT,
                 action_flag VARCHAR(100) DEFAULT 'reference',
                 sort_order INTEGER DEFAULT 0,
@@ -661,6 +663,8 @@ app.put('/comp-shop-images/:id', async (req, res) => {
         if(d.colour !== undefined) add('colour', d.colour);
         if(d.price !== undefined) add('price', d.price);
         if(d.fabric !== undefined) add('fabric', d.fabric);
+        if(d.type !== undefined) add('type', d.type);
+        if(d.theme !== undefined) add('theme', d.theme);
         if(d.notes !== undefined) add('notes', d.notes);
         if(d.actionFlag !== undefined) add('action_flag', d.actionFlag);
         if(!fields.length) return res.json({ success: true });
