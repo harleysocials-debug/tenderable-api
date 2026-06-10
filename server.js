@@ -587,7 +587,16 @@ app.get('/comp-shops', async (req, res) => {
              GROUP BY cs.id ORDER BY cs.created_at DESC`,
             [company]
         );
-        res.json({ shops: shops.rows });
+        // Fetch first 4 thumbnails per shop
+        const result = [];
+        for (const shop of shops.rows) {
+            const thumbs = await pool.query(
+                `SELECT image_data FROM comp_shop_images WHERE shop_id=$1 AND image_data IS NOT NULL ORDER BY sort_order ASC, created_at ASC LIMIT 4`,
+                [shop.id]
+            );
+            result.push({ ...shop, thumbs: thumbs.rows.map(r => r.image_data) });
+        }
+        res.json({ shops: result });
     } catch(err){ res.status(500).json({ error: err.message }); }
 });
 
