@@ -194,11 +194,15 @@ app.get('/setup', async (req, res) => {
                 brand VARCHAR(100),
                 status VARCHAR(50) DEFAULT 'draft',
                 looks JSONB DEFAULT '[]',
+                notes TEXT,
+                attachments JSONB DEFAULT '[]',
                 created_by VARCHAR(100),
                 created_at TIMESTAMP DEFAULT NOW(),
                 edited_at TIMESTAMP
             )
         `);
+        await pool.query(`ALTER TABLE packs ADD COLUMN IF NOT EXISTS notes TEXT`);
+        await pool.query(`ALTER TABLE packs ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'`);
         await pool.query(`
             CREATE TABLE IF NOT EXISTS direct_messages (
                 id VARCHAR(100) PRIMARY KEY,
@@ -1106,6 +1110,8 @@ function formatMessage(m) {
 // Run critical table creation directly at startup
 async function ensureTables(){
   try {
+    await pool.query(`ALTER TABLE packs ADD COLUMN IF NOT EXISTS notes TEXT`).catch(function(){});
+    await pool.query(`ALTER TABLE packs ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'`).catch(function(){});
     await pool.query(`CREATE TABLE IF NOT EXISTS suppliers (
       id VARCHAR(100) PRIMARY KEY,
       name VARCHAR(200) NOT NULL,
